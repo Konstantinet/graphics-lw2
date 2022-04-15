@@ -1,5 +1,5 @@
-# Computer graphics Laboratory work 1
-Drawing graphic primitives with OpenGL: dot, triangle and polygon
+# Computer graphics Laboratory work 2
+Geometrical tansitions: translation,rotation,scaling
 ## Main part
 ### Glut initialization 
 ```c++
