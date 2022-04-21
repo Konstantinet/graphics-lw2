@@ -7,16 +7,20 @@
 
 GLuint VBO;
 GLuint IBO;
-GLuint gWorldLocation;
+GLuint LIBO;
 float Scale = 0.0;
-GLdouble* MultMatrix(GLdouble*, GLdouble*);
-#define ToRadian(x) ((x) * 3.1415926 / 180.0f)
+#define ToRadian(x) ((x) * 3.1415926f / 180.0f)
 
 class Pipeline {
-    glm::mat4 TransformMatrix;
+    glm::mat4 CameraMatrix;
     glm::vec3 Translation;
     glm::vec3 Rotation;
     glm::vec3 Scaling;
+    float FOV;
+    float Width;
+    float Height;
+    float zNear;
+    float zFar;
 
 public:
     Pipeline() {
@@ -38,6 +42,28 @@ public:
         Scaling.x = ScaleX;
         Scaling.y = ScaleY;
         Scaling.z = ScaleZ;
+    }
+    void SetPerspectiveProj(float FOV, float Width, float Height, float zNear, float zFar)
+    {
+        this->FOV = FOV;
+        this->Width = Width;
+        this->Height = Height;
+        this->zNear = zNear;
+        this->zFar = zFar;
+    }
+    void SetCamera(glm::mat4 camera) {
+        CameraMatrix = camera;
+    }
+    glm::mat4 GetPerspectiveProjectionatrix() {
+        const float ar = Width / Height;
+        const float zRange = zNear - zFar;
+        const float tanHalfFOV = tanf(ToRadian(FOV / 2.0f));
+        glm::mat4 PrespectiveProjMatrix (
+            1.0f / (tanHalfFOV * ar), 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f / tanHalfFOV, 0.0f, 0.0f,
+            0.0f, 0.0f, (-zNear - zFar) / zRange, 2.0f * zFar * zNear / zRange,
+            0.0f, 0.0f, 1.0f, 0.0f);
+        return PrespectiveProjMatrix;
     }
     glm::mat4 PerformTransformation() {
         glm::mat4 TranslateMatrix(
@@ -66,7 +92,10 @@ public:
             0.0f, sinf(ToRadian(Rotation.x)), cosf(ToRadian(Rotation.x)), 0.0f,
             0.0f, 0.0f, 0.0f, 1.0f);
         glm::mat4 RotateMatrix = RotateX * RotateY * RotateZ;
-        return TranslateMatrix*RotateMatrix* ScaleMatrix;
+        glm::mat4 ProjectionMatrix = GetPerspectiveProjectionatrix();
+
+        
+        return ProjectionMatrix*CameraMatrix*TranslateMatrix*RotateMatrix* ScaleMatrix;
     }
 };
 
@@ -76,35 +105,34 @@ void RenderSceneCB()
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);//fill window with set colour
     glEnableVertexAttribArray(0);//enabling reading from array buffer
     glLoadIdentity();
-        Scale += 0.0006;    
-    //glTranslatef(sinf(Scale), 0, 0);
-    //glRotatef(sinf(Scale)*500, 0, 0,1);
-    //glScalef(abs(sinf(Scale)), abs(sinf(Scale)), abs(sinf(Scale)));
-        Pipeline p;
-        p.Translate(0, sinf(Scale), 0);
-        p.Rotate(0,0 , 90 * sinf(Scale));
-        p.Scale(sinf(Scale), sinf(Scale), 0);
-        glLoadMatrixf(value_ptr(p.PerformTransformation()));
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);//specify points rendering attributes stored in VBO
+	Scale += 0.0006f;
+
+    glm::mat4 ViewMatrix = glm::lookAt(glm::vec3(0.0, 0.0, -2.0),
+        glm::vec3(0.0, 0.0, 0.0),
+        glm::vec3(1.0, 2.0, 1.0));
+
+	Pipeline p;
+    p.Translate(sinf(Scale)-0.5, 0, 0);
+    p.Rotate(0, 0, sinf(Scale) * 90);
+    //p.Scale(sinf(Scale),sinf(Scale),0);
+    p.SetCamera(ViewMatrix);
+    p.SetPerspectiveProj(30.0f, 1024, 768, 1.0f, 1000.0f);
+	glLoadMatrixf(value_ptr(p.PerformTransformation()));
+
+    
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);//specify points rendering attributes stored in VBO
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
+    glColor3f(1, 0, 0);
     glDrawElements(GL_TRIANGLES,18,GL_UNSIGNED_INT,0);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, LIBO);
+    glColor3f(0, 1, 0);
+    glDrawElements(GL_LINES, 24, GL_UNSIGNED_INT, 0);
     glDisableVertexAttribArray(0);//disabling
     glutSwapBuffers();//double bufferisation
     glutPostRedisplay();
    
-}
-GLdouble* MultMatrix(GLdouble* a, GLdouble* b) {
-    GLdouble* c = new double[16];
-    for (int i = 0; i < 4; ++i)
-    {
-        for (int j = 0; j < 4; ++j)
-        {
-            c[i * 4 + j] = 0;
-            for (int k = 0; k < 4; ++k)
-                c[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
-        }
-    }
-    return c;
 }
 void CreateVertex() {
     glm::vec3 Vertices[8];
@@ -133,12 +161,19 @@ void CreateVertex() {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Indices), Indices, GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
 
+    GLuint Lines[24] = {
+        0,1,0,2,0,3,4,5,4,6,4,7,1,2,2,3,3,1,5,6,6,7,7,5
+    };
+    glGenBuffers(1, &LIBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, LIBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Lines), Lines, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, LIBO);
 }
 int main(int argc, char** argv)
 {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
-    glutInitWindowSize(512, 384);
+    glutInitWindowSize(1024, 768);
     glutInitWindowPosition(0,0);
     glutCreateWindow("Tutorial 01");
    
@@ -152,10 +187,7 @@ int main(int argc, char** argv)
         fprintf(stderr, "Error: '%s'\n", glewGetErrorString(res));
         return 1;
     }
-
-
     CreateVertex();
-
     glutMainLoop();
    
     return 0;
